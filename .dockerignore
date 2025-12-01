@@ -1,0 +1,10 @@
+.venv
+.git
+.vscode
+.dockerignore
+.compose.yml
+.env
+.qodo
+Dockerfile
+README.md
+README*.md

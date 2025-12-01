@@ -1,0 +1,40 @@
+networks:
+  socket-proxy:
+    driver: bridge
+
+services:
+  socket-proxy:
+    image: lscr.io/linuxserver/socket-proxy:latest
+    container_name: dockpeek-socket-proxy
+    restart: unless-stopped
+    environment:
+      - CONTAINERS=1
+      - VERSION=1
+      - INFO=1
+      # Required for container updates
+      - POST=1
+      - NETWORKS=1
+      - TZ=Asia/Taipei
+    volumes:
+      - ${DOCKET_SOCKET:-/var/run/docker.sock}:/var/run/docker.sock:ro
+    read_only: true
+    tmpfs:
+      - /run
+    networks:
+      - socket-proxy
+  docker-network-autoconf:
+    build: .
+    container_name: ${CONTAINER_NAME:-docker-network-autoconf}
+    environment:
+      - DOCKER_HOST=tcp://socket-proxy:2375
+      - DOCKER_NETWORK_AUTOCONF_NAME=${CONTAINER_NAME:-docker-network-autoconf}
+      - LOG_LEVEL=${LOG_LEVEL:-INFO}
+      - CONTAINER_NAME=${CONTAINER_NAME:-docker-network-autoconf}
+    depends_on:
+      - socket-proxy
+    restart: unless-stopped
+    networks:
+      - socket-proxy
+    labels:
+      - "docker-network-autoconf.settings.networks=symmetry-lan"
+      - "docker-network-autoconf.settings.networks.symmetry-lan.subnet=10.10.192.0/19"
