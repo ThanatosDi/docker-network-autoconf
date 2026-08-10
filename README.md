@@ -1,4 +1,5 @@
 # Docker Network Autoconf
+<img width="1024" height="559" alt="image" src="https://github.com/user-attachments/assets/f9af8f3d-c730-4f95-b1d9-459690e3f700" />
 
 ## What is this?
 
