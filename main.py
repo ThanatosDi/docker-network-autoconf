@@ -4,6 +4,8 @@ import sys
 from enum import Enum
 
 import docker
+import docker.errors
+from docker.models.containers import Container
 from docker.types import IPAMConfig, IPAMPool
 from loguru import logger
 
@@ -89,8 +91,7 @@ self = client.containers.get(
 )
 
 
-def __get_container_label(container_id_or_name: str, label_key: str) -> list[str]:
-    container = client.containers.get(container_id_or_name)
+def __get_container_label(container: Container, label_key: str) -> list[str]:
     labels = list(
         filter(
             None,
@@ -177,9 +178,9 @@ def connection(container_id_or_name: str):
         連接容器到網路，檢查容器是否已經連接到網路，如果已經連接，則跳過。
         連接容器到網路，並將容器的 alias 設定到網路中。
     """
-    logger.info(f"ℹ️ 開始連接網路... container_id_or_name: {container_id_or_name}")
     container = client.containers.get(container_id_or_name)
-    networks = __get_container_label(container.id, ContainerLabelEnum.NETWORKS.value)
+    logger.info(f"ℹ️ 開始連接網路... container: {container.name}")
+    networks = __get_container_label(container, ContainerLabelEnum.NETWORKS.value)
     connected_networks = container.attrs["NetworkSettings"]["Networks"]
     logger.debug(f"🐞 networks: {networks}, connected_networks:{connected_networks}")
     for label_network in networks:
@@ -192,7 +193,7 @@ def connection(container_id_or_name: str):
             logger.info(f"ℹ️ 容器 {container.name} 已經連接到網路 {network}，跳過...")
             return
         network_aliases = __get_container_label(
-            container.id,
+            container,
             ContainerLabelEnum.NETWORK_ALIASES.value.format(network=label_network),
         )
         logger.debug(f"🐞 Network aliases: {network_aliases}")
