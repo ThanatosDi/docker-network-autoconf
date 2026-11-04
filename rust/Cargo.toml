@@ -1,0 +1,16 @@
+[package]
+name = "docker-network-autoconf"
+version = "1.0.0"
+edition = "2024"
+
+[dependencies]
+bollard = "0.21"
+futures-util = "0.3"
+serde_json = "1"
+tokio = { version = "1", features = ["macros", "rt-multi-thread", "signal"] }
+tracing = "0.1"
+tracing-subscriber = "0.3"
+
+[profile.release]
+strip = true
+lto = true

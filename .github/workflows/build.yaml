@@ -2,45 +2,136 @@ name: Builder
 
 on:
   push:
+    # 推送 v*.*.* tag 時 build 並推送至 Docker Hub（tag 推送不套用 paths 過濾）
     tags:
       - "v*.*.*"
+    # 推送到分支且本 workflow 有異動時，只測試 build、不推送
+    branches:
+      - "**"
+    paths:
+      - ".github/workflows/build.yaml"
+  pull_request:
+    paths:
+      - ".github/workflows/build.yaml"
+
+env:
+  IMAGE_NAME: thanatosdi/docker-network-autoconf
+  PUSH: ${{ startsWith(github.ref, 'refs/tags/v') }}
 
 jobs:
-  build:
+  lint-rust:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
-        uses: actions/checkout@v6
+        uses: actions/checkout@v7
+
+      - name: Cache cargo
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: rust
+
+      - name: Lint
+        working-directory: rust
+        run: cargo clippy --locked -- -D warnings
+
+  build:
+    strategy:
+      # 任一 build 失敗時仍讓其他 build 跑完，方便一次看到所有錯誤
+      fail-fast: false
+      matrix:
+        lang: [python, rust]
+        arch: [amd64, arm64]
+        include:
+          - arch: amd64
+            platform: linux/amd64
+            runner: ubuntu-latest
+          - arch: arm64
+            platform: linux/arm64
+            runner: ubuntu-26.04-arm
+    runs-on: ${{ matrix.runner }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
 
       - name: Docker meta
         id: meta
-        uses: docker/metadata-action@v5
+        uses: docker/metadata-action@v6
         with:
           images: |
-            thanatosdi/docker-network-autoconf
-          # generate Docker tags based on the following events/attributes
-          tags: |
-            type=raw,value=latest
-            type=semver,pattern={{version}}
-            type=semver,pattern={{version}}-python
+            ${{ env.IMAGE_NAME }}
 
       - name: Login to Docker Hub
-        uses: docker/login-action@v3
+        if: env.PUSH == 'true'
+        uses: docker/login-action@v4
         with:
           username: ${{ secrets.DOCKERHUB_USERNAME }}
           password: ${{ secrets.DOCKERHUB_TOKEN }}
 
-      - name: Set up QEMU
-        uses: docker/setup-qemu-action@v3
-
       - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v3
+        uses: docker/setup-buildx-action@v4
 
-      - name: Build and push
-        uses: docker/build-push-action@v6
+      - name: Build and push by digest
+        id: build
+        uses: docker/build-push-action@v7
         with:
-          context: .
-          platforms: linux/amd64,linux/arm64
-          push: true
-          tags: ${{ steps.meta.outputs.tags }}
+          context: ./${{ matrix.lang }}
+          platforms: ${{ matrix.platform }}
           labels: ${{ steps.meta.outputs.labels }}
+          outputs: type=image,name=${{ env.IMAGE_NAME }},push-by-digest=true,name-canonical=true,push=${{ env.PUSH }}
+          cache-from: type=gha,scope=${{ matrix.lang }}-${{ matrix.arch }}
+          cache-to: type=gha,scope=${{ matrix.lang }}-${{ matrix.arch }},mode=max
+
+      - name: Export digest
+        if: env.PUSH == 'true'
+        run: |
+          mkdir -p /tmp/digests
+          digest="${{ steps.build.outputs.digest }}"
+          echo "${digest#sha256:}" > "/tmp/digests/${digest#sha256:}"
+
+      - name: Upload digest
+        if: env.PUSH == 'true'
+        uses: actions/upload-artifact@v7
+        with:
+          name: digest-${{ matrix.lang }}-${{ matrix.arch }}
+          path: /tmp/digests/*
+          if-no-files-found: error
+          retention-days: 1
+
+  # 所有語言、架構的 build 與 lint 都成功才發布
+  merge:
+    needs: [lint-rust, build]
+    if: startsWith(github.ref, 'refs/tags/v')
+    strategy:
+      matrix:
+        include:
+          - lang: python
+            tags: |
+              latest
+              latest-python
+              {version}
+              {version}-python
+          - lang: rust
+            tags: |
+              latest-rust
+              {version}-rust
+    runs-on: ubuntu-latest
+    steps:
+      - name: Resolve tags
+        id: tags
+        env:
+          TAGS: ${{ matrix.tags }}
+        run: |
+          {
+            echo "tags<<EOF"
+            echo "${TAGS//\{version\}/${GITHUB_REF_NAME#v}}"
+            echo "EOF"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Merge Manifest
+        uses: ThanatosDi/merge-images-digests@v1
+        with:
+          image-name: ${{ env.IMAGE_NAME }}
+          artifact-pattern: digest-${{ matrix.lang }}-*
+          tags: ${{ steps.tags.outputs.tags }}
+          registry-username: ${{ secrets.DOCKERHUB_USERNAME }}
+          registry-password: ${{ secrets.DOCKERHUB_TOKEN }}
