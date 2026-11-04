@@ -2,7 +2,7 @@ name: Builder
 
 on:
   push:
-    # 推送 v*.*.* tag 時 build 並推送至 Docker Hub（tag 推送不套用 paths 過濾）
+    # 推送 v*.*.* tag 時 build 並推送至 Docker Hub 與 GHCR（tag 推送不套用 paths 過濾）
     tags:
       - "v*.*.*"
     # 推送到分支且本 workflow 有異動時，只測試 build、不推送
@@ -15,8 +15,14 @@ on:
       - ".github/workflows/build.yaml"
 
 env:
-  IMAGE_NAME: thanatosdi/docker-network-autoconf
+  DOCKERHUB_IMAGE: docker.io/thanatosdi/docker-network-autoconf
+  # GHCR 的 image 名稱必須為小寫
+  GHCR_IMAGE: ghcr.io/thanatosdi/docker-network-autoconf
   PUSH: ${{ startsWith(github.ref, 'refs/tags/v') }}
+
+permissions:
+  contents: read
+  packages: write
 
 jobs:
   lint-rust:
@@ -58,7 +64,8 @@ jobs:
         uses: docker/metadata-action@v6
         with:
           images: |
-            ${{ env.IMAGE_NAME }}
+            ${{ env.DOCKERHUB_IMAGE }}
+            ${{ env.GHCR_IMAGE }}
 
       - name: Login to Docker Hub
         if: env.PUSH == 'true'
@@ -66,6 +73,14 @@ jobs:
         with:
           username: ${{ secrets.DOCKERHUB_USERNAME }}
           password: ${{ secrets.DOCKERHUB_TOKEN }}
+
+      - name: Login to GHCR
+        if: env.PUSH == 'true'
+        uses: docker/login-action@v4
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v4
@@ -77,7 +92,8 @@ jobs:
           context: ./${{ matrix.lang }}
           platforms: ${{ matrix.platform }}
           labels: ${{ steps.meta.outputs.labels }}
-          outputs: type=image,name=${{ env.IMAGE_NAME }},push-by-digest=true,name-canonical=true,push=${{ env.PUSH }}
+          # 同一個 digest 同時推送至 Docker Hub 與 GHCR
+          outputs: type=image,"name=${{ env.DOCKERHUB_IMAGE }},${{ env.GHCR_IMAGE }}",push-by-digest=true,name-canonical=true,push=${{ env.PUSH }}
           cache-from: type=gha,scope=${{ matrix.lang }}-${{ matrix.arch }}
           cache-to: type=gha,scope=${{ matrix.lang }}-${{ matrix.arch }},mode=max
 
@@ -127,11 +143,21 @@ jobs:
             echo "EOF"
           } >> "$GITHUB_OUTPUT"
 
-      - name: Merge Manifest
+      - name: Merge Manifest (Docker Hub)
         uses: ThanatosDi/merge-images-digests@v1
         with:
-          image-name: ${{ env.IMAGE_NAME }}
+          image-name: ${{ env.DOCKERHUB_IMAGE }}
           artifact-pattern: digest-${{ matrix.lang }}-*
           tags: ${{ steps.tags.outputs.tags }}
           registry-username: ${{ secrets.DOCKERHUB_USERNAME }}
           registry-password: ${{ secrets.DOCKERHUB_TOKEN }}
+
+      - name: Merge Manifest (GHCR)
+        uses: ThanatosDi/merge-images-digests@v1
+        with:
+          image-name: ${{ env.GHCR_IMAGE }}
+          artifact-pattern: digest-${{ matrix.lang }}-*
+          tags: ${{ steps.tags.outputs.tags }}
+          registry: ghcr.io
+          registry-username: ${{ github.actor }}
+          registry-password: ${{ secrets.GITHUB_TOKEN }}
