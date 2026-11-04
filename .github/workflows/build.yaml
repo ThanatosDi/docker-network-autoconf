@@ -25,6 +25,11 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v7
 
+      - name: Cache cargo
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: rust
+
       - name: Lint
         working-directory: rust
         run: cargo clippy --locked -- -D warnings
@@ -73,6 +78,8 @@ jobs:
           platforms: ${{ matrix.platform }}
           labels: ${{ steps.meta.outputs.labels }}
           outputs: type=image,name=${{ env.IMAGE_NAME }},push-by-digest=true,name-canonical=true,push=${{ env.PUSH }}
+          cache-from: type=gha,scope=${{ matrix.lang }}-${{ matrix.arch }}
+          cache-to: type=gha,scope=${{ matrix.lang }}-${{ matrix.arch }},mode=max
 
       - name: Export digest
         if: env.PUSH == 'true'
