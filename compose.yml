@@ -23,7 +23,7 @@ services:
     networks:
       - socket-proxy
   docker-network-autoconf:
-    build: .
+    build: ./python
     container_name: ${CONTAINER_NAME:-docker-network-autoconf}
     environment:
       - DOCKER_HOST=tcp://socket-proxy:2375

@@ -18,7 +18,7 @@ This tool aims to simplify network configuration in a Docker environment, especi
 ## How It Works
 
 1.  **Startup and Initialization**:
-    -   After the service (`main.py`) starts, it first reads the labels on its **own container**.
+    -   After the service (`python/main.py`) starts, it first reads the labels on its **own container**.
     -   Based on the `docker-network-autoconf.settings.networks` label, it identifies which networks to manage.
     -   The service checks if these networks exist. If not, it creates them using the corresponding `subnet` and `gateway` label settings.
 
