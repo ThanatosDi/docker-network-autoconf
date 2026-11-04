@@ -1,0 +1,27 @@
+name: Mirror to GitLab
+
+on:
+  push:
+  delete:
+  workflow_dispatch:
+
+concurrency:
+  group: mirror-gitlab
+  cancel-in-progress: false
+
+jobs:
+  mirror:
+    name: Mirror to GitLab
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+
+    steps:
+      - name: Push to GitLab
+        env:
+          SRC_URL: https://x-access-token:${{ github.token }}@github.com/${{ github.repository }}.git
+          DST_URL: https://oauth2:${{ secrets.GITLAB_SYNC_TOKEN }}@gitlab.com/thanatosdi/${{ github.event.repository.name }}.git
+        run: |
+          git clone --mirror "$SRC_URL" src
+          cd src
+          git push --prune "$DST_URL" 'refs/heads/*:refs/heads/*' 'refs/tags/*:refs/tags/*'
